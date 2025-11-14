@@ -34,7 +34,7 @@ def extract_boxed(s: str):
         i += 1
     return ''.join(content) 
 
-def parse_response_math500(val):
+def parse_response(val):
 
     string_tmp = val.split('<|eot_id|>')[0]
 
@@ -114,6 +114,7 @@ def load_results_for_method(method, base_dir="experiments-mmlupro"):
 
     method_qids = {
         'math500' : list(range(500)),
+        'math100' : list(range(100))
     }
     target_qids = method_qids[dataset]
     for fname in os.listdir(method_dir):
@@ -159,8 +160,11 @@ def evaluate_method_single(llm, prm, core_method, results_dir="experiments-mmlup
     response_sep = 'assistant<|end_header_id|>'
 
     method_name = f"{llm}-{prm}-{core_method}"  # 실제 폴더명
-    if results_dir.split('-')[-1] == 'math500':
+    dataset_name = results_dir.split('-')[-1]
+    if dataset_name == 'math500':
         dataset = load_dataset("HuggingFaceH4/MATH-500")[split]
+    elif dataset_name == 'math100':
+        dataset = load_dataset("amphora/MCLM", "MT-MATH100")[split]
     else:
         raise KeyError()
     results = load_results_for_method(method_name, results_dir)
@@ -170,19 +174,20 @@ def evaluate_method_single(llm, prm, core_method, results_dir="experiments-mmlup
     IDX2LETTER = {i:c for c,i in LETTER2IDX.items()}
 
     for example_idx, example in enumerate(dataset):
-        if results_dir.split('-')[-1] == 'math500':
-            domain = None
-            qid = str(example_idx)
-            question = example["problem"]
+        qid = str(example_idx)
+        domain = None
+        answer_index = None
+        problem_key = None
+        if dataset_name == 'math500':
+            problem_key = 'problem'
+        elif dataset_name == 'math100':
+            problem_key = 'en'
         else:
             raise KeyError()
 
-        if results_dir.split('-')[-1] == 'math500':
-            answer_index = None
-            answer_option = example['answer']
-        else:
-            raise KeyError()
-        
+        question = example[problem_key]
+        answer_option = example['answer']
+
         if qid in results:
             if ('SC' in core_method):
                 outputs_key = 'answer'
@@ -203,11 +208,10 @@ def evaluate_method_single(llm, prm, core_method, results_dir="experiments-mmlup
                         any_correct = False
                         for out in outputs:
                             resp = out.split(response_sep)[-1]
-                            if results_dir.split('-')[-1] == 'math500':
-                                parsed = parse_response_math500(resp)
-                                if grade_answer(parsed, normalize_answer(answer_option)):
-                                    any_correct = True
-                                    break
+                            parsed = parse_response(resp)
+                            if grade_answer(parsed, normalize_answer(answer_option)):
+                                any_correct = True
+                                break
                             else:
                                 raise KeyError()
                         correct = any_correct
@@ -221,38 +225,24 @@ def evaluate_method_single(llm, prm, core_method, results_dir="experiments-mmlup
                         if selection == "BoN":
                             agg_scores = [aggregate(ss, method=aggregation) for ss in step_scores]
                             best_idx = max(range(len(agg_scores)), key=lambda i: agg_scores[i])
-                            if results_dir.split('-')[-1] == 'math500':
-                                pred = parse_response_math500(outputs[best_idx].split(response_sep)[-1])
-                            else:
-                                raise KeyError()
+                            pred = parse_response(outputs[best_idx].split(response_sep)[-1])
                         elif selection == "MV":
                             counts = defaultdict(int)
                             for out in outputs:
-                                if results_dir.split('-')[-1] == 'math500':
-                                    parsed = parse_response_math500(out.split(response_sep)[-1])
-                                else:
-                                    raise KeyError()
-
+                                parsed = parse_response(out.split(response_sep)[-1])
                                 counts[parsed] += 1
                             pred = max(counts, key=counts.get)
 
                         elif selection == "WMV":
                             weights = defaultdict(float)
                             for i, out in enumerate(outputs):
-                                if results_dir.split('-')[-1] == 'math500':
-                                    parsed = parse_response_math500(out.split(response_sep)[-1])
-                                else:
-                                    raise KeyError()
-
+                                parsed = parse_response(out.split(response_sep)[-1])
                                 weights[parsed] += aggregate(step_scores[i][0], method=aggregation)
                             pred = max(weights, key=weights.get)
                         else:
                             raise ValueError(f"Unsupported selection method: {selection}")
 
-                        if results_dir.split('-')[-1] == 'math500':
-                            correct = grade_answer(pred, normalize_answer(answer_option))
-                        else:
-                            raise KeyError()
+                        correct = grade_answer(pred, normalize_answer(answer_option))
                     else:
                         pred, correct = None, False
             except:
@@ -301,7 +291,7 @@ if __name__ == '__main__':
 
     seed = 12389
 
-    dataset = 'math500'
+    dataset = os.environ.get('EVAL_DATASET', 'math500')
 
     exp = 'BS'
 
