@@ -331,8 +331,7 @@ if __name__ == '__main__':
         all_dfs = []
         acc_dict = {}
         for budget_limit in [2, 4, 8, 10]:
-            # for metric in ['acc', 'Pass@L']:
-            for metric in ['acc']:
+            for metric in ['acc', 'Pass@L']:
                 print('='*30, f'Budget (L) {budget_limit} - Metric {metric}', '='*30)
                 for search_type, method, aggregation in method_cfgs_chain:
                     try:
