@@ -74,13 +74,59 @@ class SelfConsistencySearch:
         responses = [r.replace("\n\n## Step", f"{score_tok}## Step") for r in responses]
         return self.prm(responses, prm_state, return_all_steps=self.return_all_steps)
 
+    # def _update_temperature(self):
+    #     if self.temp_update_rule is None:
+    #         return None
+    #     else:
+    #         # TODO
+    #         # self.generator.temperature = ...
+    #         raise NotImplementedError()
+        
+
     def _update_temperature(self):
-        if self.temp_update_rule is None:
-            return None
+        """Ultra-simple temperature updater for Math-500 (no state, few lines)."""
+        import math
+        from collections import Counter
+
+        # --- read inputs (fall back safely) ---
+        T      = float(getattr(self, "temperature", 0.8))
+        t_min  = getattr(self, "t_min", 0.2)
+        t_max  = getattr(self, "t_max", 1.8)
+        answers = getattr(self, "answers", None) or getattr(self, "sc_answers", None) or []
+        scores  = getattr(self, "prm_scores", None) or getattr(self, "scores_prm", None)
+
+        # --- quick stats: entropy frac, unique frac, PRM margin ---
+        K = max(1, len(answers))
+        cnt = Counter(answers) if answers else Counter({"_": K})
+        def Hfrac(v):
+            tot = sum(v); 
+            if K <= 1 or tot == 0: return 0.0
+            h = 0.0
+            for c in v:
+                if c>0:
+                    p = c/tot
+                    h -= p*math.log(max(p,1e-12))
+            return h / math.log(K)
+        Hf = Hfrac(list(cnt.values()))
+        Uf = len(cnt)/K
+        if scores and len(scores) >= 2:
+            s = sorted(scores, reverse=True)
+            M = max(0.0, s[0]-s[1])
         else:
-            # TODO
-            # self.generator.temperature = ...
-            raise NotImplementedError()
+            M = 0.0
+
+        # --- targets (tune if needed) ---
+        tH, tU, tM = 0.55, 0.55, 0.10
+
+        # --- single-step proportional control on log(T) ---
+        dlogT = 1.0*(tH - Hf) + 0.8*(tU - Uf) + 0.6*(tM - M)
+        dlogT = max(-0.20, min(0.20, dlogT))   # clamp for stability
+
+        # --- apply & clamp ---
+        T = T * math.exp(dlogT)
+        T = max(t_min, min(t_max, T))
+        self.temperature = float(T)
+        return self.temperature
 
     def __call__(self, question: str):
         input_ids_question = self.generator.encode(question)
