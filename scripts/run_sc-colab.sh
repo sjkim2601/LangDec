@@ -28,7 +28,8 @@ CUDA_DEVICE_ID=0
 
 seed=1234
 
-dataset='HuggingFaceH4/MATH-500'
+# dataset='HuggingFaceH4/MATH-500'
+dataset='amphora/MCLM'
 
 start=0
 end=1
